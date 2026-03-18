@@ -1,6 +1,7 @@
 """Unit tests for Novita backend - no API key required (mock HTTP)."""
 
 import json
+import requests
 from unittest.mock import patch, MagicMock
 
 from cli_anything.novita.utils.novita_backend import (

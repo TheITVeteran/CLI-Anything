@@ -14,13 +14,12 @@ from __future__ import annotations
 import sys
 import os
 import json
-from datetime import datetime
 import click
 from pathlib import Path
-from typing import Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from cli_anything.novita.core.session import ChatSession
 from cli_anything.novita.utils.novita_backend import (
     get_api_key,
     load_config,
@@ -44,63 +43,6 @@ def get_session():
         sf = str(Path.home() / ".cli-anything-novita" / "session.json")
         _session = ChatSession(session_file=sf)
     return _session
-
-
-class ChatSession:
-    """Lightweight session for chat history management."""
-
-    def __init__(self, session_file: str = None):
-        self.session_file = session_file or str(
-            Path.home() / ".cli-anything-novita" / "session.json"
-        )
-        self.messages = []
-        self.history = []
-        self.max_history = 50
-        self.modified = False
-        if os.path.exists(self.session_file):
-            try:
-                with open(self.session_file, "r") as f:
-                    data = json.load(f)
-                    self.messages = data.get("messages", [])
-            except (json.JSONDecodeError, IOError):
-                self.messages = []
-
-    def add_user_message(self, content: str):
-        self.messages.append({"role": "user", "content": content})
-        self.modified = True
-        self._save()
-
-    def add_assistant_message(self, content: str):
-        self.messages.append({"role": "assistant", "content": content})
-        self.modified = True
-        self._save()
-
-    def get_messages(self):
-        return self.messages.copy()
-
-    def clear(self):
-        self.messages = []
-        self.modified = True
-        self._save()
-
-    def status(self):
-        return {
-            "message_count": len(self.messages),
-            "modified": self.modified,
-            "session_file": self.session_file,
-        }
-
-    def _save(self):
-        os.makedirs(os.path.dirname(self.session_file), exist_ok=True)
-        with open(self.session_file, "w") as f:
-            json.dump({"messages": self.messages}, f, indent=2)
-
-    def save_history(self, command: str, result: dict):
-        self.history.append(
-            {"command": command, "result": result, "timestamp": str(datetime.now())}
-        )
-        if len(self.history) > self.max_history:
-            self.history = self.history[-self.max_history :]
 
 
 def output(data, message: str = ""):
@@ -170,6 +112,9 @@ def cli(ctx, use_json, api_key_opt, model_opt):
     """Novita CLI — OpenAI-compatible AI API client."""
     global _json_output
     _json_output = use_json
+    ctx.ensure_object(dict)
+    ctx.obj["api_key"] = api_key_opt
+    ctx.obj["model"] = model_opt
 
     if ctx.invoked_subcommand is None:
         ctx.invoke(repl)
@@ -186,11 +131,13 @@ def cli(ctx, use_json, api_key_opt, model_opt):
 )
 @click.option("--temperature", type=float, default=None, help="Temperature (0.0-1.0)")
 @click.option("--max-tokens", type=int, default=None, help="Maximum tokens to generate")
+@click.pass_context
 @handle_error
-def chat(prompt, model_opt=None, temperature=None, max_tokens=None):
+def chat(ctx, prompt, model_opt=None, temperature=None, max_tokens=None):
     """Chat with the Novita API."""
-    api_key = get_api_key(api_key_opt)
-    model = model_opt or "deepseek/deepseek-v3.2"
+    parent_key = ctx.obj.get("api_key") if ctx.obj else None
+    api_key = get_api_key(parent_key)
+    model = model_opt or (ctx.obj.get("model") if ctx.obj else None) or "deepseek/deepseek-v3.2"
 
     # Build messages
     messages = []
@@ -239,11 +186,13 @@ def chat(prompt, model_opt=None, temperature=None, max_tokens=None):
 )
 @click.option("--temperature", type=float, default=None, help="Temperature (0.0-1.0)")
 @click.option("--max-tokens", type=int, default=None, help="Maximum tokens to generate")
+@click.pass_context
 @handle_error
-def stream(prompt, model_opt=None, temperature=None, max_tokens=None):
+def stream(ctx, prompt, model_opt=None, temperature=None, max_tokens=None):
     """Stream chat completion."""
-    api_key = get_api_key(api_key_opt)
-    model = model_opt or "deepseek/deepseek-v3.2"
+    parent_key = ctx.obj.get("api_key") if ctx.obj else None
+    api_key = get_api_key(parent_key)
+    model = model_opt or (ctx.obj.get("model") if ctx.obj else None) or "deepseek/deepseek-v3.2"
 
     # Build messages
     messages = []
@@ -279,30 +228,36 @@ def stream(prompt, model_opt=None, temperature=None, max_tokens=None):
     output({"content": full_response}, "✓ Stream completed")
 
 
-@cli.command()
+@cli.group()
+def session():
+    """Session management commands."""
+    pass
+
+
+@session.command("status")
 @handle_error
 def session_status():
     """Show session status."""
-    session = get_session()
-    output(session.status(), "Session status")
+    s = get_session()
+    output(s.status(), "Session status")
 
 
-@cli.command()
+@session.command("clear")
 @handle_error
 def session_clear():
     """Clear session history."""
-    session = get_session()
-    session.clear()
+    s = get_session()
+    s.clear()
     output({"cleared": True}, "Session cleared")
 
 
-@cli.command()
+@session.command("history")
 @click.option("--limit", "-n", type=int, default=20, help="Maximum entries to show")
 @handle_error
 def session_history(limit):
     """Show command history."""
-    session = get_session()
-    history = session.history[-limit:]
+    s = get_session()
+    history = s.history[-limit:]
     output(history, f"History ({len(history)} entries)")
 
 

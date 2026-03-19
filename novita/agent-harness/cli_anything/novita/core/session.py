@@ -8,6 +8,32 @@ from datetime import datetime
 from pathlib import Path
 
 
+def _locked_save_json(path, data, **dump_kwargs) -> None:
+    """Atomically write JSON with exclusive file locking."""
+    try:
+        f = open(path, "r+")
+    except FileNotFoundError:
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        f = open(path, "w")
+    with f:
+        _locked = False
+        try:
+            import fcntl
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            _locked = True
+        except (ImportError, OSError):
+            pass
+        try:
+            f.seek(0)
+            f.truncate()
+            json.dump(data, f, **dump_kwargs)
+            f.flush()
+        finally:
+            if _locked:
+                import fcntl
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+
 class ChatSession:
     """Lightweight session for chat history management."""
 
@@ -24,6 +50,7 @@ class ChatSession:
                 with open(self.session_file, "r") as f:
                     data = json.load(f)
                     self.messages = data.get("messages", [])
+                    self.history = data.get("history", [])
             except (json.JSONDecodeError, IOError):
                 self.messages = []
 
@@ -42,20 +69,25 @@ class ChatSession:
 
     def clear(self):
         self.messages = []
+        self.history = []
         self.modified = True
         self._save()
 
     def status(self):
         return {
             "message_count": len(self.messages),
+            "history_count": len(self.history),
             "modified": self.modified,
             "session_file": self.session_file,
         }
 
     def _save(self):
-        os.makedirs(os.path.dirname(self.session_file), exist_ok=True)
-        with open(self.session_file, "w") as f:
-            json.dump({"messages": self.messages}, f, indent=2)
+        _locked_save_json(
+            self.session_file,
+            {"messages": self.messages, "history": self.history},
+            indent=2,
+        )
+        self.modified = False
 
     def save_history(self, command: str, result: dict):
         self.history.append(
@@ -63,3 +95,4 @@ class ChatSession:
         )
         if len(self.history) > self.max_history:
             self.history = self.history[-self.max_history :]
+        self._save()

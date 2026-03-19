@@ -17,8 +17,6 @@ import json
 import click
 from pathlib import Path
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from cli_anything.novita.core.session import ChatSession
 from cli_anything.novita.utils.novita_backend import (
     get_api_key,

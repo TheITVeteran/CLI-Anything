@@ -102,12 +102,8 @@ class TestDaemonMode:
         # May fail if daemon can't start, but should return JSON
         assert result.exit_code == 0
         import json
-        try:
-            data = json.loads(result.output)
-            assert "daemon" in data or "error" in data
-        except json.JSONDecodeError:
-            # Fallback: check if error message is present
-            pass
+        data = json.loads(result.output)
+        assert "daemon" in data or "error" in data
 
 
 class TestErrorHandling:
@@ -117,8 +113,9 @@ class TestErrorHandling:
         """Invalid path should give clear error."""
         # Note: This test's behavior depends on DOMShell's error handling
         result = runner.invoke(cli, ["fs", "cd", "/invalid/path/that/does/not/exist"])
-        # Should not crash, exit code may be 0 or 1 depending on error
-        assert True  # If we get here, no crash
+        # Should not crash; exit code may be 0 or 1 depending on error handling
+        assert result.exception is None
+        assert result.exit_code in (0, 1)
 
     def test_empty_page_info(self, runner):
         """Page info with no page loaded shows empty state."""

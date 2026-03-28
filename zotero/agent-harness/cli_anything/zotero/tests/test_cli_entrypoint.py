@@ -12,7 +12,8 @@ from pathlib import Path
 from unittest import mock
 
 from cli_anything.zotero.tests._helpers import create_sample_environment, fake_zotero_http_server, sample_pdf_bytes
-from cli_anything.zotero.zotero_cli import dispatch, repl_help_text
+from cli_anything.zotero.core import session as session_mod
+from cli_anything.zotero.zotero_cli import RootCliConfig, _handle_repl_builtin, dispatch, repl_help_text, run_repl
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -86,6 +87,118 @@ class CliEntrypointTests(unittest.TestCase):
         result = self.run_cli([], input_text="exit\n")
         self.assertEqual(result.returncode, 0, msg=result.stderr)
         self.assertIn("cli-anything-zotero", result.stdout)
+
+    def test_repl_builtin_use_library_uses_root_runtime_config(self):
+        config = RootCliConfig(
+            backend="api",
+            data_dir="D:/zotero-data",
+            profile_dir="D:/zotero-profile",
+            executable="D:/Program Files/Zotero/zotero.exe",
+            json_output=True,
+        )
+        skin = mock.Mock()
+        state = {"current_library": None, "current_collection": None, "current_item": None, "command_history": []}
+
+        with mock.patch("cli_anything.zotero.zotero_cli.current_session", return_value=state):
+            with mock.patch("cli_anything.zotero.zotero_cli.session_mod.save_session_state"):
+                with mock.patch("cli_anything.zotero.zotero_cli.session_mod.append_command_history"):
+                    with mock.patch("cli_anything.zotero.zotero_cli.discovery.build_runtime_context", return_value=object()) as build_runtime:
+                        with mock.patch("cli_anything.zotero.zotero_cli._normalize_session_library", return_value=2):
+                            with mock.patch("click.echo") as echo:
+                                handled, control = _handle_repl_builtin(["use-library", "L2"], skin, config)
+
+        self.assertTrue(handled)
+        self.assertEqual(control, 0)
+        build_runtime.assert_called_once_with(
+            backend="api",
+            data_dir="D:/zotero-data",
+            profile_dir="D:/zotero-profile",
+            executable="D:/Program Files/Zotero/zotero.exe",
+        )
+        emitted = json.loads(echo.call_args.args[0])
+        self.assertEqual(emitted["current_library"], 2)
+
+    def test_repl_builtin_use_selected_uses_root_runtime_config(self):
+        config = RootCliConfig(
+            backend="sqlite",
+            data_dir="D:/zotero-data",
+            profile_dir="D:/zotero-profile",
+            executable="D:/Program Files/Zotero/zotero.exe",
+            json_output=False,
+        )
+        runtime = object()
+        selected = {"collectionID": 1, "collectionName": "Selected"}
+        state = {"current_library": 1, "current_collection": "COLLAAAA", "current_item": None, "command_history": []}
+
+        with mock.patch("cli_anything.zotero.zotero_cli.current_session", return_value=state):
+            with mock.patch("cli_anything.zotero.zotero_cli.discovery.build_runtime_context", return_value=runtime) as build_runtime:
+                with mock.patch("cli_anything.zotero.zotero_cli.catalog.use_selected_collection", return_value=selected) as use_selected:
+                    with mock.patch("cli_anything.zotero.zotero_cli._persist_selected_collection", return_value=state):
+                        with mock.patch("cli_anything.zotero.zotero_cli.session_mod.append_command_history"):
+                            with mock.patch("click.echo"):
+                                handled, control = _handle_repl_builtin(["use-selected"], mock.Mock(), config)
+
+        self.assertTrue(handled)
+        self.assertEqual(control, 0)
+        build_runtime.assert_called_once_with(
+            backend="sqlite",
+            data_dir="D:/zotero-data",
+            profile_dir="D:/zotero-profile",
+            executable="D:/Program Files/Zotero/zotero.exe",
+        )
+        use_selected.assert_called_once_with(runtime)
+
+    def test_json_repl_builtin_status_emits_structured_json(self):
+        config = RootCliConfig(json_output=True)
+        state = {"current_library": 1, "current_collection": "COLLAAAA", "current_item": "REG12345", "command_history": []}
+        with mock.patch("cli_anything.zotero.zotero_cli.current_session", return_value=state):
+            with mock.patch("click.echo") as echo:
+                handled, control = _handle_repl_builtin(["status"], mock.Mock(), config)
+
+        self.assertTrue(handled)
+        self.assertEqual(control, 0)
+        payload = json.loads(echo.call_args.args[0])
+        self.assertEqual(payload["current_library"], 1)
+        self.assertEqual(payload["current_item"], "REG12345")
+
+    def test_run_repl_dispatches_commands_with_root_flags(self):
+        config = RootCliConfig(
+            backend="api",
+            data_dir="D:/zotero-data",
+            profile_dir="D:/zotero-profile",
+            executable="D:/Program Files/Zotero/zotero.exe",
+            json_output=True,
+        )
+        with mock.patch("cli_anything.zotero.zotero_cli.ReplSkin.create_prompt_session", return_value=None):
+            with mock.patch("cli_anything.zotero.zotero_cli._safe_print_banner"), mock.patch(
+                "cli_anything.zotero.zotero_cli._safe_print_goodbye"
+            ):
+                with mock.patch("builtins.input", side_effect=["item get REG12345", "exit"]):
+                    with mock.patch("cli_anything.zotero.zotero_cli.current_session", return_value=session_mod.default_session_state()):
+                        with mock.patch(
+                            "cli_anything.zotero.zotero_cli.session_mod.expand_repl_aliases_with_state",
+                            return_value=["item", "get", "REG12345"],
+                        ):
+                            with mock.patch("cli_anything.zotero.zotero_cli.dispatch", return_value=0) as dispatch_mock:
+                                result = run_repl(config)
+
+        self.assertEqual(result, 0)
+        dispatch_mock.assert_called_once_with(
+            [
+                "--backend",
+                "api",
+                "--json",
+                "--data-dir",
+                "D:/zotero-data",
+                "--profile-dir",
+                "D:/zotero-profile",
+                "--executable",
+                "D:/Program Files/Zotero/zotero.exe",
+                "item",
+                "get",
+                "REG12345",
+            ]
+        )
 
     def test_app_status_json(self):
         result = self.run_cli(["--json", "app", "status"])

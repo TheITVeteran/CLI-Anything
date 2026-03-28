@@ -54,6 +54,12 @@ class PathDiscoveryTests(unittest.TestCase):
             self.assertIsNotNone(path)
             self.assertIn('extensions.zotero.httpServer.localAPI.enabled', path.read_text(encoding="utf-8"))
 
+    def test_find_executable_returns_none_when_unresolved(self):
+        with mock.patch.dict("os.environ", {}, clear=True):
+            with mock.patch("cli_anything.zotero.utils.zotero_paths.shutil.which", return_value=None):
+                with mock.patch("pathlib.Path.exists", return_value=False):
+                    self.assertIsNone(zotero_paths.find_executable(env={}))
+
 
 class SQLiteInspectionTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -225,6 +231,18 @@ class HttpUtilityTests(unittest.TestCase):
                 headers={"Zotero-API-Version": zotero_http.LOCAL_API_VERSION},
             )
         self.assertTrue(ready)
+
+    def test_launch_zotero_raises_when_executable_is_unresolved(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env = create_sample_environment(Path(tmpdir))
+            runtime = discovery.build_runtime_context(
+                data_dir=str(env["data_dir"]),
+                profile_dir=str(env["profile_dir"]),
+                executable=str(env["executable"]),
+            )
+            runtime.environment.executable = None
+            with self.assertRaisesRegex(RuntimeError, "could not be resolved"):
+                discovery.launch_zotero(runtime)
 
 
 class ImportCoreTests(unittest.TestCase):

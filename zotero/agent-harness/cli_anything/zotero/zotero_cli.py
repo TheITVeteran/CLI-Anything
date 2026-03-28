@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shlex
 import sys
+from dataclasses import dataclass
 from typing import Any
 
 import click
@@ -18,6 +19,15 @@ except Exception:  # pragma: no cover - platform-specific import guard
 
 
 CONTEXT_SETTINGS = {"ignore_unknown_options": False}
+
+
+@dataclass(frozen=True)
+class RootCliConfig:
+    backend: str = "auto"
+    data_dir: str | None = None
+    profile_dir: str | None = None
+    executable: str | None = None
+    json_output: bool = False
 
 
 def _stdout_encoding() -> str:
@@ -51,7 +61,53 @@ def root_json_output(ctx: click.Context | None) -> bool:
     root = ctx.find_root()
     if root is None or root.obj is None:
         return False
+    cli_config = root.obj.get("cli_config")
+    if isinstance(cli_config, RootCliConfig):
+        return cli_config.json_output
     return bool(root.obj.get("json_output"))
+
+
+def _build_runtime_from_config(config: RootCliConfig) -> discovery.RuntimeContext:
+    return discovery.build_runtime_context(
+        backend=config.backend,
+        data_dir=config.data_dir,
+        profile_dir=config.profile_dir,
+        executable=config.executable,
+    )
+
+
+def _current_cli_config(ctx: click.Context | None) -> RootCliConfig:
+    if ctx is None:
+        return RootCliConfig()
+    root = ctx.find_root()
+    assert root is not None
+    root.ensure_object(dict)
+    cli_config = root.obj.get("cli_config")
+    if isinstance(cli_config, RootCliConfig):
+        return cli_config
+    legacy = root.obj.get("config", {})
+    cli_config = RootCliConfig(
+        backend=legacy.get("backend", "auto"),
+        data_dir=legacy.get("data_dir"),
+        profile_dir=legacy.get("profile_dir"),
+        executable=legacy.get("executable"),
+        json_output=bool(root.obj.get("json_output")),
+    )
+    root.obj["cli_config"] = cli_config
+    return cli_config
+
+
+def _repl_root_args(config: RootCliConfig) -> list[str]:
+    args = ["--backend", config.backend]
+    if config.json_output:
+        args.append("--json")
+    if config.data_dir:
+        args.extend(["--data-dir", config.data_dir])
+    if config.profile_dir:
+        args.extend(["--profile-dir", config.profile_dir])
+    if config.executable:
+        args.extend(["--executable", config.executable])
+    return args
 
 
 def current_runtime(ctx: click.Context) -> discovery.RuntimeContext:
@@ -59,14 +115,9 @@ def current_runtime(ctx: click.Context) -> discovery.RuntimeContext:
     assert root is not None
     root.ensure_object(dict)
     cached = root.obj.get("runtime")
-    config = root.obj.get("config", {})
+    config = _current_cli_config(ctx)
     if cached is None:
-        cached = discovery.build_runtime_context(
-            backend=config.get("backend", "auto"),
-            data_dir=config.get("data_dir"),
-            profile_dir=config.get("profile_dir"),
-            executable=config.get("executable"),
-        )
+        cached = _build_runtime_from_config(config)
         root.obj["runtime"] = cached
     return cached
 
@@ -138,7 +189,15 @@ def _import_exit_code(payload: dict[str, Any]) -> int:
 def cli(ctx: click.Context, json_output: bool, backend: str, data_dir: str | None, profile_dir: str | None, executable: str | None) -> int:
     """Agent-native Zotero CLI using SQLite, connector, and Local API backends."""
     ctx.ensure_object(dict)
+    cli_config = RootCliConfig(
+        backend=backend,
+        data_dir=data_dir,
+        profile_dir=profile_dir,
+        executable=executable,
+        json_output=json_output,
+    )
     ctx.obj["json_output"] = json_output
+    ctx.obj["cli_config"] = cli_config
     ctx.obj["config"] = {
         "backend": backend,
         "data_dir": data_dir,
@@ -146,7 +205,7 @@ def cli(ctx: click.Context, json_output: bool, backend: str, data_dir: str | Non
         "executable": executable,
     }
     if ctx.invoked_subcommand is None:
-        return run_repl()
+        return run_repl(cli_config)
     return 0
 
 
@@ -797,7 +856,20 @@ Builtins:
 """
 
 
-def _handle_repl_builtin(argv: list[str], skin: ReplSkin) -> tuple[bool, int]:
+def _repl_echo(config: RootCliConfig, data: Any = None, *, text: str | None = None) -> None:
+    if config.json_output:
+        click.echo(_json_text(data))
+        return
+    if text is not None:
+        click.echo(_safe_text_for_stdout(text))
+        return
+    if isinstance(data, str):
+        click.echo(_safe_text_for_stdout(data))
+        return
+    click.echo(_json_text(data))
+
+
+def _handle_repl_builtin(argv: list[str], skin: ReplSkin, config: RootCliConfig) -> tuple[bool, int]:
     if not argv:
         return True, 0
     cmd = argv[0]
@@ -808,16 +880,28 @@ def _handle_repl_builtin(argv: list[str], skin: ReplSkin) -> tuple[bool, int]:
         click.echo(repl_help_text())
         return True, 0
     if cmd == "current-library":
-        click.echo(f"Current library: {state.get('current_library') or '<unset>'}")
+        _repl_echo(
+            config,
+            {"current_library": state.get("current_library")},
+            text=f"Current library: {state.get('current_library') or '<unset>'}",
+        )
         return True, 0
     if cmd == "current-collection":
-        click.echo(f"Current collection: {state.get('current_collection') or '<unset>'}")
+        _repl_echo(
+            config,
+            {"current_collection": state.get("current_collection")},
+            text=f"Current collection: {state.get('current_collection') or '<unset>'}",
+        )
         return True, 0
     if cmd == "current-item":
-        click.echo(f"Current item: {state.get('current_item') or '<unset>'}")
+        _repl_echo(
+            config,
+            {"current_item": state.get("current_item")},
+            text=f"Current item: {state.get('current_item') or '<unset>'}",
+        )
         return True, 0
     if cmd == "status":
-        click.echo(json.dumps(session_mod.build_session_payload(state), ensure_ascii=False, indent=2))
+        _repl_echo(config, session_mod.build_session_payload(state))
         return True, 0
     if cmd == "history":
         limit = 10
@@ -827,59 +911,74 @@ def _handle_repl_builtin(argv: list[str], skin: ReplSkin) -> tuple[bool, int]:
             except ValueError:
                 skin.warning(f"history limit must be an integer: {argv[1]}")
                 return True, 0
-        click.echo(json.dumps({"history": state.get("command_history", [])[-limit:]}, ensure_ascii=False, indent=2))
+        _repl_echo(config, {"history": state.get("command_history", [])[-limit:]})
         return True, 0
     if cmd == "state-path":
-        click.echo(str(session_mod.session_state_path()))
+        _repl_echo(config, {"state_path": str(session_mod.session_state_path())}, text=str(session_mod.session_state_path()))
         return True, 0
     if cmd == "use-library" and len(argv) > 1:
         library_ref = " ".join(argv[1:])
         try:
-            state["current_library"] = _normalize_session_library(discovery.build_runtime_context(), library_ref)
+            state["current_library"] = _normalize_session_library(_build_runtime_from_config(config), library_ref)
         except click.ClickException as exc:
             skin.error(exc.format_message())
             return True, 0
         session_mod.save_session_state(state)
         session_mod.append_command_history(f"use-library {library_ref}")
-        click.echo(f"Current library: {state['current_library']}")
+        _repl_echo(
+            config,
+            session_mod.build_session_payload(state),
+            text=f"Current library: {state['current_library']}",
+        )
         return True, 0
     if cmd == "use-collection" and len(argv) > 1:
         state["current_collection"] = " ".join(argv[1:])
         session_mod.save_session_state(state)
         session_mod.append_command_history(f"use-collection {' '.join(argv[1:])}")
-        click.echo(f"Current collection: {state['current_collection']}")
+        _repl_echo(
+            config,
+            session_mod.build_session_payload(state),
+            text=f"Current collection: {state['current_collection']}",
+        )
         return True, 0
     if cmd == "use-item" and len(argv) > 1:
         state["current_item"] = " ".join(argv[1:])
         session_mod.save_session_state(state)
         session_mod.append_command_history(f"use-item {' '.join(argv[1:])}")
-        click.echo(f"Current item: {state['current_item']}")
+        _repl_echo(
+            config,
+            session_mod.build_session_payload(state),
+            text=f"Current item: {state['current_item']}",
+        )
         return True, 0
     if cmd == "clear-library":
         state["current_library"] = None
         session_mod.save_session_state(state)
-        click.echo("Current library cleared.")
+        _repl_echo(config, session_mod.build_session_payload(state), text="Current library cleared.")
         return True, 0
     if cmd == "clear-collection":
         state["current_collection"] = None
         session_mod.save_session_state(state)
-        click.echo("Current collection cleared.")
+        _repl_echo(config, session_mod.build_session_payload(state), text="Current collection cleared.")
         return True, 0
     if cmd == "clear-item":
         state["current_item"] = None
         session_mod.save_session_state(state)
-        click.echo("Current item cleared.")
+        _repl_echo(config, session_mod.build_session_payload(state), text="Current item cleared.")
         return True, 0
     if cmd == "use-selected":
         try:
-            runtime = discovery.build_runtime_context()
+            runtime = _build_runtime_from_config(config)
             selected = catalog.use_selected_collection(runtime)
         except Exception as exc:
             skin.error(str(exc))
             return True, 0
-        _persist_selected_collection(selected)
+        persisted_state = _persist_selected_collection(selected)
         session_mod.append_command_history("use-selected")
-        click.echo(json.dumps(selected, ensure_ascii=False, indent=2))
+        if config.json_output:
+            _repl_echo(config, {"selected": selected, "session": session_mod.build_session_payload(persisted_state)})
+        else:
+            _repl_echo(config, selected)
         return True, 0
     return False, 0
 
@@ -920,7 +1019,8 @@ def _safe_print_goodbye(skin: ReplSkin) -> None:
         click.echo("Goodbye!")
 
 
-def run_repl() -> int:
+def run_repl(config: RootCliConfig | None = None) -> int:
+    config = config or RootCliConfig()
     skin = ReplSkin("zotero", version=__version__)
     prompt_session = None
     try:
@@ -948,14 +1048,14 @@ def run_repl() -> int:
         except ValueError as exc:
             skin.error(f"parse error: {exc}")
             continue
-        handled, control = _handle_repl_builtin(argv, skin)
+        handled, control = _handle_repl_builtin(argv, skin, config)
         if handled:
             if control == 1:
                 _safe_print_goodbye(skin)
                 return 0
             continue
         expanded = session_mod.expand_repl_aliases_with_state(argv, current_session())
-        result = dispatch(expanded)
+        result = dispatch(_repl_root_args(config) + expanded)
         if result not in (0, None):
             skin.warning(f"command exited with status {result}")
         else:
@@ -963,9 +1063,10 @@ def run_repl() -> int:
 
 
 @cli.command("repl")
-def repl_command() -> int:
+@click.pass_context
+def repl_command(ctx: click.Context) -> int:
     """Start the interactive REPL."""
-    return run_repl()
+    return run_repl(_current_cli_config(ctx))
 
 
 def dispatch(argv: list[str] | None = None, prog_name: str | None = None) -> int:

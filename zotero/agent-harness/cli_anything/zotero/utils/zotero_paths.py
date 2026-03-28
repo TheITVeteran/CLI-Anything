@@ -195,7 +195,7 @@ def find_executable(explicit_executable: str | None = None, env: Mapping[str, st
     for candidate in candidates:
         if candidate.exists():
             return candidate
-    return candidates[0]
+    return None
 
 
 def find_install_dir(executable: Optional[Path]) -> Optional[Path]:

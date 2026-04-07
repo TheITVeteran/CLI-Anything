@@ -73,6 +73,7 @@
 !/godot/
 !/mermaid/
 !/comfyui/
+!/dify-workflow/
 !/adguardhome/
 !/novita/
 !/ollama/
@@ -122,6 +123,8 @@
 /mermaid/.*
 /comfyui/*
 /comfyui/.*
+/dify-workflow/*
+/dify-workflow/.*
 /adguardhome/*
 /adguardhome/.*
 /ollama/*
@@ -169,6 +172,7 @@
 !/godot/agent-harness/
 !/mermaid/agent-harness/
 !/comfyui/agent-harness/
+!/dify-workflow/agent-harness/
 !/adguardhome/agent-harness/
 !/novita/agent-harness/
 !/ollama/agent-harness/

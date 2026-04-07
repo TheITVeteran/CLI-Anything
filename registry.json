@@ -508,6 +508,20 @@
       "category": "gamedev",
       "contributor": "omerarslan0",
       "contributor_url": "https://github.com/omerarslan0"
+    },
+    {
+      "name": "dify-workflow",
+      "display_name": "Dify Workflow",
+      "version": "0.1.0",
+      "description": "CLI-Anything wrapper for the Dify workflow DSL editor covering create, inspect, validate, edit, export, and layout operations",
+      "requires": "Upstream dify-workflow CLI installed from https://github.com/Akabane71/dify-workflow-cli",
+      "homepage": "https://github.com/Akabane71/dify-workflow-cli",
+      "install_cmd": "pip install git+https://github.com/HKUDS/CLI-Anything.git#subdirectory=dify-workflow/agent-harness",
+      "entry_point": "cli-anything-dify-workflow",
+      "skill_md": "dify-workflow/agent-harness/cli_anything/dify_workflow/skills/SKILL.md",
+      "category": "ai",
+      "contributor": "Akabane71",
+      "contributor_url": "https://github.com/Akabane71"
     }
   ]
 }

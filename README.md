@@ -862,6 +862,13 @@ Each application received complete, production-ready CLI interfaces — not demo
 <td align="center">✅ 21</td>
 </tr>
 <tr>
+<td align="center"><strong>🧩 <a href="dify-workflow/agent-harness/">Dify Workflow</a></strong></td>
+<td>Dify DSL Editing</td>
+<td><code>cli-anything-dify-workflow</code></td>
+<td>Wrapper around the open-source dify-workflow CLI</td>
+<td align="center">✅ 11</td>
+</tr>
+<tr>
 <td align="center"><strong>🖼️ ComfyUI</strong></td>
 <td>AI Image Generation</td>
 <td><code>cli-anything-comfyui</code></td>
@@ -1021,6 +1028,7 @@ cli-anything/
 ├── ✨ anygen/agent-harness/             # AnyGen CLI (50 tests)
 ├── 🖼️ comfyui/agent-harness/            # ComfyUI CLI (70 tests)
 ├── 🧠 notebooklm/agent-harness/         # NotebookLM CLI (experimental, 21 tests)
+├── 🧩 dify-workflow/agent-harness/      # Dify Workflow CLI wrapper (11 tests)
 ├── 🛡️ adguardhome/agent-harness/       # AdGuard Home CLI (36 tests)
 ├── 🦙 ollama/agent-harness/             # Ollama CLI (98 tests)
 ├── 🎮 godot/agent-harness/              # Godot Engine CLI (24 tests)

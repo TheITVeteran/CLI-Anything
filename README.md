@@ -852,7 +852,7 @@ Each application received complete, production-ready CLI interfaces — not demo
 <td>DevOps / Ethereum</td>
 <td><code>cli-anything-eth2-quickstart</code></td>
 <td>eth2-quickstart shell automation + JSON health checks</td>
-<td align="center">✅ 16</td>
+<td align="center">✅ 18</td>
 </tr>
 <tr>
 <td align="center"><strong>🧜 Mermaid Live Editor</strong></td>

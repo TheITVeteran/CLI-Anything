@@ -85,9 +85,9 @@ def extract_system_package(content: str) -> Optional[str]:
             package = match.group(1)
             if "apt-get" in pattern:
                 return f"apt-get install {package}"
-            if "apt" in pattern:
+            elif "apt" in pattern:
                 return f"apt install {package}"
-            if "brew" in pattern:
+            elif "brew" in pattern:
                 return f"brew install {package}"
     return None
 
